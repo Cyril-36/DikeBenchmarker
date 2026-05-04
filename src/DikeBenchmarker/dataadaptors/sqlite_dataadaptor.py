@@ -144,6 +144,58 @@ class SqlDataAdaptor(DataAdaptor):
         finally:
             conn.close()
 
+    def get_competitions(self) -> list[str]:
+        """Returns the list of all competition names stored in the database.
+
+        Returns:
+            list[str]: List of competition names.
+        """
+        conn = sqlite3.connect(self.database_path)
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT DISTINCT competition
+                FROM solvers
+                WHERE competition IS NOT NULL
+                UNION
+                SELECT DISTINCT competition
+                FROM competition_compatibility
+                WHERE competition IS NOT NULL
+                ORDER BY competition
+            """
+            cursor.execute(query)
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_competition_instance_hash(self, comp_name: str) -> list[str]:
+        """Returns the list of instance hashes used in the given competition.
+
+        Args:
+            comp_name (str): Name of the competition track.
+
+        Returns:
+            list[str]: List of instance hashes.
+        """
+        conn = sqlite3.connect(self.database_path)
+        try:
+            cursor = conn.cursor()
+            query = """
+                SELECT DISTINCT p.inst_hash
+                FROM performances p
+                JOIN solvers s ON p.solver_id = s.solver_id
+                JOIN competition_compatibility cc
+                    ON cc.competition = s.competition
+                    AND cc.env_id = p.env_id
+                    AND cc.res_id = p.res_id
+                WHERE s.competition = ?
+                ORDER BY p.inst_hash
+            """
+            cursor.execute(query, (comp_name,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
     def get_environments(self, env_ids: list) -> pl.DataFrame:
         """Returns the full environment rows for the given environment IDs.
 
