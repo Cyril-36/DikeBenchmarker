@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 import polars as pl
 import importlib.resources
@@ -77,3 +79,44 @@ def test_get_all_solver_ids(adaptor):
     solver_ids = adaptor.get_all_solver_ids()
     assert isinstance(solver_ids, list)
     assert all(isinstance(i, str) for i in solver_ids)
+
+
+def test_get_competitions_from_solver_and_compatibility_sources(tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE solvers (solver_id TEXT, competition TEXT, solver_name TEXT)")
+        cursor.execute("CREATE TABLE competition_compatibility (competition TEXT, env_id TEXT, res_id INTEGER)")
+        cursor.execute("INSERT INTO solvers VALUES ('solver_a', 'comp_from_solvers', 'Solver A')")
+        cursor.execute("INSERT INTO competition_compatibility VALUES ('comp_from_compatibility', 'env_a', 1)")
+        conn.commit()
+    finally:
+        conn.close()
+    adaptor = SqlDataAdaptor(str(db_path))
+    competitions = adaptor.get_competitions()
+    assert competitions == ["comp_from_compatibility", "comp_from_solvers"]
+
+
+def test_get_competition_instance_hash_filters_by_competition_environment_and_resource(tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE solvers (solver_id TEXT, competition TEXT, solver_name TEXT)")
+        cursor.execute("CREATE TABLE competition_compatibility (competition TEXT, env_id TEXT, res_id INTEGER)")
+        cursor.execute("CREATE TABLE performances (inst_hash TEXT, solver_id TEXT, env_id TEXT, res_id INTEGER, perf REAL, status TEXT)")
+        cursor.execute("INSERT INTO solvers VALUES ('solver_a', 'comp_a', 'Solver A')")
+        cursor.execute("INSERT INTO solvers VALUES ('solver_b', 'comp_b', 'Solver B')")
+        cursor.execute("INSERT INTO competition_compatibility VALUES ('comp_a', 'env_a', 1)")
+        cursor.execute("INSERT INTO competition_compatibility VALUES ('comp_b', 'env_b', 2)")
+        cursor.execute("INSERT INTO performances VALUES ('inst_a', 'solver_a', 'env_a', 1, 1.0, 'COMPLETE')")
+        cursor.execute("INSERT INTO performances VALUES ('inst_extra', 'solver_a', 'env_b', 2, 1.0, 'COMPLETE')")
+        cursor.execute("INSERT INTO performances VALUES ('inst_b', 'solver_b', 'env_b', 2, 1.0, 'COMPLETE')")
+        conn.commit()
+    finally:
+        conn.close()
+    adaptor = SqlDataAdaptor(str(db_path))
+    assert adaptor.get_competition_instance_hash("comp_a") == ["inst_a"]
+    assert adaptor.get_competition_instance_hash("comp_b") == ["inst_b"]
+    assert adaptor.get_competition_instance_hash("nonexistent") == []
